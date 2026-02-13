@@ -42,3 +42,45 @@ os.makedirs("models", exist_ok=True)
 joblib.dump(model, "models/storage_health_model.pkl")
 
 print("\nModel saved successfully.")
+
+import joblib
+import pandas as pd
+
+# Load model
+model = joblib.load("models/storage_health_model.pkl")
+
+feature_names = [
+    "disk_usage_percent",
+    "temperature",
+    "read_error_rate",
+    "write_error_rate",
+    "reallocated_sector_count",
+    "pending_sector_count",
+    "power_on_hours"
+]
+
+def predict_health(input_data):
+
+    # Convert to DataFrame with correct column names
+    input_df = pd.DataFrame([input_data], columns=feature_names)
+
+    prob = model.predict_proba(input_df)[0][1]  # failure probability
+    prediction = model.predict(input_df)[0]
+
+    health_score = int((1 - prob) * 100)
+
+    if prediction == 0:
+        status = "Good"
+    else:
+        status = "Critical"
+
+    return health_score, status
+
+if __name__ == "__main__":
+    sample_input = [40, 30, 10, 12, 5, 3, 5000]
+
+    score, status = predict_health(sample_input)
+
+    print("\nHealth Score:", score)
+    print("Status:", status)
+
