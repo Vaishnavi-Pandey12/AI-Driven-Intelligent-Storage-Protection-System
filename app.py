@@ -326,6 +326,17 @@ elif current_page == "health_monitor":
         "Is your laptop overheating frequently?",
         ["No", "Yes"],
     )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        disk_usage = st.slider("Disk Usage (%)", 0, 100, 70)
+        temperature = st.slider("Temperature (°C)", 20, 80, 40)
+        read_error = st.number_input("Read Error Rate", 0, 100, 10)
+    with col2:
+        write_error = st.number_input("Write Error Rate", 0, 100, 10)
+        reallocated = st.number_input("Reallocated Sector Count", 0, 500, 5)
+    with col3:
+        pending = st.number_input("Pending Sector Count", 0, 500, 5)
+        power_hours = st.number_input("Power On Hours", 0, 100000, 10000)
 
     if st.button("Run Health Analysis"):
 
@@ -348,6 +359,16 @@ elif current_page == "health_monitor":
         loader = display_loading_animation("Analyzing Storage Health...")
         time.sleep(2)
         score, status = predict_health(values)
+        metrics = [
+            disk_usage,
+            temperature,
+            read_error,
+            write_error,
+            reallocated,
+            pending,
+            power_hours,
+        ]
+        score, status = predict_health(metrics)
         loader.empty()
 
         st.success(f"Health Score: {score}")
@@ -355,6 +376,8 @@ elif current_page == "health_monitor":
 
         st.session_state.health_score = score
         st.session_state.quick_health_values = values
+
+        st.session_state.health_score = score
 
 
 # DUPLICATES
@@ -426,6 +449,10 @@ elif current_page == "backup_automation":
         "Backup Destination for Recommended Files",
         value=destination if destination else "backup_storage",
         key="important_backup_dest",
+    important_root = st.text_input("Folder to scan for important files", value=source if source else "")
+    recommended_destination = st.text_input(
+        "Backup Destination for Recommended Files",
+        value=destination if destination else "backup_storage",
     )
 
     if st.button("Suggest Important Files"):
@@ -476,6 +503,19 @@ elif current_page == "protection_pipeline":
         ["No", "Yes"],
         key="pipe_hot",
     )
+    pipeline_backup = st.text_input("Backup destination", "backup_storage")
+
+    st.markdown("Health Inputs")
+    col1, col2 = st.columns(2)
+    with col1:
+        pipeline_disk_usage = st.slider("Pipeline Disk Usage (%)", 0, 100, 70)
+        pipeline_temperature = st.slider("Pipeline Temperature (°C)", 20, 80, 40)
+        pipeline_read_error = st.number_input("Pipeline Read Error Rate", 0, 100, 10)
+        pipeline_write_error = st.number_input("Pipeline Write Error Rate", 0, 100, 10)
+    with col2:
+        pipeline_reallocated = st.number_input("Pipeline Reallocated Sector Count", 0, 500, 5)
+        pipeline_pending = st.number_input("Pipeline Pending Sector Count", 0, 500, 5)
+        pipeline_power_hours = st.number_input("Pipeline Power On Hours", 0, 100000, 10000)
 
     if st.button("Run Full Protection Scan"):
         loader = display_loading_animation("Running end-to-end protection workflow...")
@@ -493,6 +533,8 @@ elif current_page == "protection_pipeline":
             pipeline_write_error,
             5,
             5,
+            pipeline_reallocated,
+            pipeline_pending,
             pipeline_power_hours,
         ]
         score, status = predict_health(metrics)
