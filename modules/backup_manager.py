@@ -58,3 +58,28 @@ if __name__ == "__main__":
         print("Backup test successful.")
     else:
         print("Backup test failed.")
+
+
+IMPORTANT_EXTENSIONS = [
+    ".docx", ".pdf", ".xlsx", ".pptx", ".txt",
+    ".jpg", ".png"
+]
+
+def find_important_files(root_folder):
+
+    important_files = []
+
+    for root, _, files in os.walk(root_folder):
+        for f in files:
+            if any(f.lower().endswith(ext) for ext in IMPORTANT_EXTENSIONS):
+                important_files.append(os.path.join(root, f))
+
+    return important_files
+
+
+def backup_selected_files(files, backup_root):
+
+    os.makedirs(backup_root, exist_ok=True)
+
+    for f in files:
+        shutil.copy2(f, backup_root)
