@@ -6,8 +6,16 @@ import datetime
 import time
 
 from modules.health_prediction import predict_health
-from modules.duplicate_finder import find_duplicates
-from modules.backup_manager import backup_path
+from modules.duplicate_finder import (
+    find_duplicates,
+    calculate_savings,
+    find_duplicates_of_file,
+)
+from modules.backup_manager import (
+    backup_path,
+    find_important_files,
+    backup_selected_files,
+)
 
 
 # =====================================================
@@ -195,6 +203,7 @@ with st.sidebar:
         "health_monitor": "Health Monitoring",
         "duplicate_analysis": "Duplicate Detection",
         "backup_automation": "Backup Management",
+        "protection_pipeline": "Full Protection",
         "notifications": "Notifications",
         "settings": "Settings"
     }
@@ -289,16 +298,36 @@ elif current_page == "health_monitor":
 
     st.subheader("Health Monitoring")
 
-    disk_usage = st.number_input("Disk Usage (%)", 0.0, 100.0, 50.0)
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        disk_usage = st.slider("Disk Usage (%)", 0, 100, 70)
+        temperature = st.slider("Temperature (°C)", 20, 80, 40)
+        read_error = st.number_input("Read Error Rate", 0, 100, 10)
+    with col2:
+        write_error = st.number_input("Write Error Rate", 0, 100, 10)
+        reallocated = st.number_input("Reallocated Sector Count", 0, 500, 5)
+    with col3:
+        pending = st.number_input("Pending Sector Count", 0, 500, 5)
+        power_hours = st.number_input("Power On Hours", 0, 100000, 10000)
 
     if st.button("Run Health Analysis"):
         loader = display_loading_animation("Analyzing Storage Health...")
         time.sleep(2)
-        metrics = [disk_usage, 35, 10, 10, 5, 3, 5000]
+        metrics = [
+            disk_usage,
+            temperature,
+            read_error,
+            write_error,
+            reallocated,
+            pending,
+            power_hours,
+        ]
         score, status = predict_health(metrics)
         loader.empty()
         st.metric("Health Score", f"{score}/100")
         st.metric("Risk Status", status)
+
+        st.session_state.health_score = score
 
 
 # DUPLICATES
@@ -313,10 +342,32 @@ elif current_page == "duplicate_analysis":
             loader = display_loading_animation("Scanning for Duplicate Files...")
             time.sleep(2)
             duplicates = find_duplicates(folder_path)
+            savings = calculate_savings(duplicates)
             loader.empty()
             st.metric("Duplicate Files Found", len(duplicates))
+            st.metric("Storage Recoverable (MB)", round(savings, 2))
+            st.session_state.duplicate_count = len(duplicates)
+            st.session_state.space_recoverable = round(savings / 1024, 2)
         else:
             st.error("Invalid folder path.")
+
+    st.markdown("---")
+    st.subheader("Find Duplicates of a Specific File")
+
+    target_file = st.text_input("Target File Path")
+    search_root = st.text_input("Search Root", value=folder_path if folder_path else "/")
+
+    if st.button("Find File Duplicates"):
+        if target_file and search_root and os.path.exists(target_file) and os.path.exists(search_root):
+            loader = display_loading_animation("Searching for identical copies...")
+            time.sleep(1.5)
+            matches = find_duplicates_of_file(target_file, search_root)
+            loader.empty()
+            st.write(f"Duplicate files found: {len(matches)}")
+            if matches:
+                st.code("\n".join(matches[:100]))
+        else:
+            st.error("Provide valid target file and search root paths.")
 
 
 # BACKUP
@@ -339,6 +390,97 @@ elif current_page == "backup_automation":
                 st.error("Backup Failed.")
         else:
             st.error("Source path does not exist.")
+
+    st.markdown("---")
+    st.subheader("Intelligent Important File Backup")
+
+    important_root = st.text_input("Folder to scan for important files", value=source if source else "")
+    recommended_destination = st.text_input(
+        "Backup Destination for Recommended Files",
+        value=destination if destination else "backup_storage",
+    )
+
+    if st.button("Suggest Important Files"):
+        if important_root and os.path.exists(important_root):
+            loader = display_loading_animation("Finding important files...")
+            time.sleep(1.5)
+            important_files = find_important_files(important_root)
+            loader.empty()
+            st.session_state["important_files"] = important_files
+            st.write(f"Important files detected: {len(important_files)}")
+            if important_files:
+                st.code("\n".join(important_files[:30]))
+        else:
+            st.error("Provide a valid folder path for important file detection.")
+
+    if "important_files" in st.session_state and st.session_state["important_files"]:
+        if st.button("Backup Recommended Files"):
+            loader = display_loading_animation("Backing up recommended files...")
+            time.sleep(1.5)
+            backup_selected_files(st.session_state["important_files"], recommended_destination)
+            loader.empty()
+            st.success("Important files backed up successfully.")
+
+
+# FULL PROTECTION
+elif current_page == "protection_pipeline":
+
+    st.subheader("Run Full Protection Pipeline")
+
+    pipeline_folder = st.text_input("Folder to scan for duplicates", "test_folder")
+    pipeline_source = st.text_input("Important files folder", "important_files")
+    pipeline_backup = st.text_input("Backup destination", "backup_storage")
+
+    st.markdown("Health Inputs")
+    col1, col2 = st.columns(2)
+    with col1:
+        pipeline_disk_usage = st.slider("Pipeline Disk Usage (%)", 0, 100, 70)
+        pipeline_temperature = st.slider("Pipeline Temperature (°C)", 20, 80, 40)
+        pipeline_read_error = st.number_input("Pipeline Read Error Rate", 0, 100, 10)
+        pipeline_write_error = st.number_input("Pipeline Write Error Rate", 0, 100, 10)
+    with col2:
+        pipeline_reallocated = st.number_input("Pipeline Reallocated Sector Count", 0, 500, 5)
+        pipeline_pending = st.number_input("Pipeline Pending Sector Count", 0, 500, 5)
+        pipeline_power_hours = st.number_input("Pipeline Power On Hours", 0, 100000, 10000)
+
+    if st.button("Run Full Protection Scan"):
+        loader = display_loading_animation("Running end-to-end protection workflow...")
+        time.sleep(2)
+
+        metrics = [
+            pipeline_disk_usage,
+            pipeline_temperature,
+            pipeline_read_error,
+            pipeline_write_error,
+            pipeline_reallocated,
+            pipeline_pending,
+            pipeline_power_hours,
+        ]
+        score, status = predict_health(metrics)
+
+        st.write("Health Score:", score)
+        st.write("Status:", status)
+
+        if os.path.exists(pipeline_folder):
+            duplicates = find_duplicates(pipeline_folder)
+            savings = calculate_savings(duplicates)
+            st.write("Duplicate groups:", len(duplicates))
+            st.write("Storage that can be saved:", round(savings, 2), "MB")
+        else:
+            st.warning("Duplicate scan skipped: invalid folder path.")
+
+        if status != "Good" and os.path.exists(pipeline_source):
+            backup_ok = backup_path(pipeline_source, pipeline_backup)
+            if backup_ok:
+                st.success("Risk detected → Backup executed.")
+            else:
+                st.error("Risk detected but backup failed.")
+        elif status != "Good":
+            st.error("Risk detected but pipeline source path is invalid.")
+        else:
+            st.success("System healthy — backup not required.")
+
+        loader.empty()
 
 
 # NOTIFICATIONS
