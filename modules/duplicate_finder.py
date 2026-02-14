@@ -18,20 +18,35 @@ def file_hash(path):
 
 
 def find_duplicates(folder):
+
     files = get_files(folder)
 
     hash_map = {}
-    duplicates = []
 
     for f in files:
         h = file_hash(f)
+
         if h in hash_map:
-            duplicates.append(f)
+            hash_map[h].append(f)
         else:
-            hash_map[h] = f
+            hash_map[h] = [f]
+
+    # keep only duplicate groups
+    duplicates = {k: v for k, v in hash_map.items() if len(v) > 1}
 
     return duplicates
 
+
+def calculate_savings(duplicates):
+    import os
+    total_size = 0
+
+    for files in duplicates.values():
+        # keep first file, rest are waste
+        for f in files[1:]:
+            total_size += os.path.getsize(f)
+
+    return total_size / (1024 * 1024)   # MB
 
 
 
@@ -39,8 +54,11 @@ def find_duplicates(folder):
 
 if __name__ == "__main__":
     folder = "test_folder"
+
     dups = find_duplicates(folder)
 
-    print("Duplicate files:")
-    for f in dups:
-        print(f)
+    print("Duplicate groups:", len(dups))
+
+    saved = calculate_savings(dups)
+    print("Storage that can be saved:", round(saved, 2), "MB")
+
