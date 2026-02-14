@@ -49,6 +49,23 @@ def calculate_savings(duplicates):
     return total_size / (1024 * 1024)   # MB
 
 
+def find_duplicates_of_file(target_file, search_root):
+
+    target_hash = file_hash(target_file)
+    matches = []
+
+    for root, _, files in os.walk(search_root):
+        for f in files:
+            path = os.path.join(root, f)
+            try:
+                if file_hash(path) == target_hash:
+                    matches.append(path)
+            except:
+                pass
+
+    return matches
+
+
 
 # test
 
