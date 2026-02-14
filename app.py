@@ -1,13 +1,22 @@
 import streamlit as st
 import os
+import shutil
 import plotly.graph_objects as go
 import random
 import datetime
 import time
 
 from modules.health_prediction import predict_health
-from modules.duplicate_finder import find_duplicates
-from modules.backup_manager import backup_path
+from modules.duplicate_finder import (
+    find_duplicates,
+    calculate_savings,
+    find_duplicates_of_file,
+)
+from modules.backup_manager import (
+    backup_path,
+    find_important_files,
+    backup_selected_files,
+)
 
 
 # =====================================================
@@ -195,6 +204,7 @@ with st.sidebar:
         "health_monitor": "Health Monitoring",
         "duplicate_analysis": "Duplicate Detection",
         "backup_automation": "Backup Management",
+        "protection_pipeline": "Full Protection",
         "notifications": "Notifications",
         "settings": "Settings"
     }
@@ -287,47 +297,115 @@ if current_page == "dashboard":
 # HEALTH
 elif current_page == "health_monitor":
 
-    st.subheader("Health Monitoring")
+    st.header("Quick 1-Minute Health Check")
 
-    disk_usage = st.number_input("Disk Usage (%)", 0.0, 100.0, 50.0)
+    total, used, _ = shutil.disk_usage(os.path.expanduser("~"))
+    auto_disk_usage = int((used / total) * 100) if total else 0
+    st.info(f"Auto-detected Disk Usage: {auto_disk_usage}%")
+
+    laptop_age = st.number_input(
+        "Laptop age (years)",
+        min_value=0,
+        max_value=15,
+        value=3,
+    )
+
+    daily_usage = st.slider(
+        "Average daily usage (hours)",
+        0,
+        24,
+        6,
+    )
+
+    system_slow = st.radio(
+        "Is your system slowing or freezing?",
+        ["No", "Yes"],
+    )
+
+    overheating = st.radio(
+        "Is your laptop overheating frequently?",
+        ["No", "Yes"],
+    )
 
     if st.button("Run Health Analysis"):
+
+        temperature = 70 if overheating == "Yes" else 40
+        read_error = 25 if system_slow == "Yes" else 5
+        write_error = read_error
+
+        power_on_hours = laptop_age * 365 * daily_usage
+
+        values = [
+            auto_disk_usage,
+            temperature,
+            read_error,
+            write_error,
+            5,
+            5,
+            power_on_hours,
+        ]
+
         loader = display_loading_animation("Analyzing Storage Health...")
         time.sleep(2)
-        metrics = [disk_usage, 35, 10, 10, 5, 3, 5000]
-        score, status = predict_health(metrics)
+        score, status = predict_health(values)
         loader.empty()
-        st.metric("Health Score", f"{score}/100")
-        st.metric("Risk Status", status)
+
+        st.success(f"Health Score: {score}")
+        st.write("Status:", status)
+
+        st.session_state.health_score = score
+        st.session_state.quick_health_values = values
 
 
 # DUPLICATES
 elif current_page == "duplicate_analysis":
 
-    st.subheader("Duplicate Detection")
+    st.subheader("Duplicate File Scan")
 
-    folder_path = st.text_input("Folder Path")
+    folder_path = st.text_input("Enter folder path to scan", "")
 
-    if st.button("Scan for Duplicates"):
+    if st.button("Scan Duplicates"):
         if os.path.exists(folder_path):
             loader = display_loading_animation("Scanning for Duplicate Files...")
             time.sleep(2)
             duplicates = find_duplicates(folder_path)
+            savings = calculate_savings(duplicates)
             loader.empty()
             st.metric("Duplicate Files Found", len(duplicates))
+            st.metric("Storage Recoverable (MB)", round(savings, 2))
+            st.session_state.duplicate_count = len(duplicates)
+            st.session_state.space_recoverable = round(savings / 1024, 2)
         else:
             st.error("Invalid folder path.")
+
+    st.markdown("---")
+    st.subheader("Find Duplicates of a Specific File")
+
+    target_file = st.text_input("Target File Path")
+    search_root = st.text_input("Search Root", value=folder_path if folder_path else "/")
+
+    if st.button("Find File Duplicates"):
+        if target_file and search_root and os.path.exists(target_file) and os.path.exists(search_root):
+            loader = display_loading_animation("Searching for identical copies...")
+            time.sleep(1.5)
+            matches = find_duplicates_of_file(target_file, search_root)
+            loader.empty()
+            st.write(f"Duplicate files found: {len(matches)}")
+            if matches:
+                st.code("\n".join(matches[:100]))
+        else:
+            st.error("Provide valid target file and search root paths.")
 
 
 # BACKUP
 elif current_page == "backup_automation":
 
-    st.subheader("Backup Management")
+    st.subheader("Backup Important Files")
 
-    source = st.text_input("Source File / Folder")
-    destination = st.text_input("Backup Destination")
+    source = st.text_input("Source Folder", "important_files")
+    destination = st.text_input("Backup Folder", "backup_storage", key="manual_backup_dest")
 
-    if st.button("Initiate Backup"):
+    if st.button("Run Backup"):
         if os.path.exists(source):
             loader = display_loading_animation("Backup in Progress...")
             time.sleep(2)
@@ -339,6 +417,109 @@ elif current_page == "backup_automation":
                 st.error("Backup Failed.")
         else:
             st.error("Source path does not exist.")
+
+    st.markdown("---")
+    st.subheader("Intelligent Important File Backup")
+
+    important_root = st.text_input("Folder to scan for important files", "C:\\Users")
+    recommended_destination = st.text_input(
+        "Backup Destination for Recommended Files",
+        value=destination if destination else "backup_storage",
+        key="important_backup_dest",
+    )
+
+    if st.button("Suggest Important Files"):
+        if important_root and os.path.exists(important_root):
+            loader = display_loading_animation("Finding important files...")
+            time.sleep(1.5)
+            important_files = find_important_files(important_root)
+            loader.empty()
+            st.session_state["important_files"] = important_files
+            st.write(f"Important files detected: {len(important_files)}")
+            if important_files:
+                st.code("\n".join(important_files[:30]))
+        else:
+            st.error("Provide a valid folder path for important file detection.")
+
+    if "important_files" in st.session_state and st.session_state["important_files"]:
+        if st.button("Backup Recommended Files"):
+            loader = display_loading_animation("Backing up recommended files...")
+            time.sleep(1.5)
+            backup_selected_files(st.session_state["important_files"], recommended_destination)
+            loader.empty()
+            st.success("Important files backed up successfully.")
+
+
+# FULL PROTECTION
+elif current_page == "protection_pipeline":
+
+    st.subheader("Run Full Protection Pipeline")
+
+    pipeline_folder = st.text_input("Folder to scan for duplicates", "test_folder")
+    pipeline_source = st.text_input("Important files folder", "important_files")
+    pipeline_backup = st.text_input("Backup destination", "backup_storage", key="pipeline_backup_dest")
+
+    st.markdown("Health Inputs (Quick Mode)")
+    total, used, _ = shutil.disk_usage(os.path.expanduser("~"))
+    pipeline_disk_usage = int((used / total) * 100) if total else 0
+    st.caption(f"Auto-detected Disk Usage for pipeline: {pipeline_disk_usage}%")
+
+    pipeline_laptop_age = st.number_input("Laptop age (years)", 0, 15, 3, key="pipe_laptop_age")
+    pipeline_daily_usage = st.slider("Average daily usage (hours)", 0, 24, 6, key="pipe_daily_usage")
+    pipeline_system_slow = st.radio(
+        "Is your system slowing or freezing?",
+        ["No", "Yes"],
+        key="pipe_slow",
+    )
+    pipeline_overheating = st.radio(
+        "Is your laptop overheating frequently?",
+        ["No", "Yes"],
+        key="pipe_hot",
+    )
+
+    if st.button("Run Full Protection Scan"):
+        loader = display_loading_animation("Running end-to-end protection workflow...")
+        time.sleep(2)
+
+        pipeline_temperature = 70 if pipeline_overheating == "Yes" else 40
+        pipeline_read_error = 25 if pipeline_system_slow == "Yes" else 5
+        pipeline_write_error = pipeline_read_error
+        pipeline_power_hours = pipeline_laptop_age * 365 * pipeline_daily_usage
+
+        metrics = [
+            pipeline_disk_usage,
+            pipeline_temperature,
+            pipeline_read_error,
+            pipeline_write_error,
+            5,
+            5,
+            pipeline_power_hours,
+        ]
+        score, status = predict_health(metrics)
+
+        st.write("Health Score:", score)
+        st.write("Status:", status)
+
+        if os.path.exists(pipeline_folder):
+            duplicates = find_duplicates(pipeline_folder)
+            savings = calculate_savings(duplicates)
+            st.write("Duplicate groups:", len(duplicates))
+            st.write("Storage that can be saved:", round(savings, 2), "MB")
+        else:
+            st.warning("Duplicate scan skipped: invalid folder path.")
+
+        if status != "Good" and os.path.exists(pipeline_source):
+            backup_ok = backup_path(pipeline_source, pipeline_backup)
+            if backup_ok:
+                st.success("Risk detected → Backup executed.")
+            else:
+                st.error("Risk detected but backup failed.")
+        elif status != "Good":
+            st.error("Risk detected but pipeline source path is invalid.")
+        else:
+            st.success("System healthy — backup not required.")
+
+        loader.empty()
 
 
 # NOTIFICATIONS
