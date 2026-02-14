@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import shutil
 import plotly.graph_objects as go
 import random
 import datetime
@@ -296,8 +297,35 @@ if current_page == "dashboard":
 # HEALTH
 elif current_page == "health_monitor":
 
-    st.subheader("Health Monitoring")
+    st.header("Quick 1-Minute Health Check")
 
+    total, used, _ = shutil.disk_usage(os.path.expanduser("~"))
+    auto_disk_usage = int((used / total) * 100) if total else 0
+    st.info(f"Auto-detected Disk Usage: {auto_disk_usage}%")
+
+    laptop_age = st.number_input(
+        "Laptop age (years)",
+        min_value=0,
+        max_value=15,
+        value=3,
+    )
+
+    daily_usage = st.slider(
+        "Average daily usage (hours)",
+        0,
+        24,
+        6,
+    )
+
+    system_slow = st.radio(
+        "Is your system slowing or freezing?",
+        ["No", "Yes"],
+    )
+
+    overheating = st.radio(
+        "Is your laptop overheating frequently?",
+        ["No", "Yes"],
+    )
     col1, col2, col3 = st.columns(3)
     with col1:
         disk_usage = st.slider("Disk Usage (%)", 0, 100, 70)
@@ -311,8 +339,26 @@ elif current_page == "health_monitor":
         power_hours = st.number_input("Power On Hours", 0, 100000, 10000)
 
     if st.button("Run Health Analysis"):
+
+        temperature = 70 if overheating == "Yes" else 40
+        read_error = 25 if system_slow == "Yes" else 5
+        write_error = read_error
+
+        power_on_hours = laptop_age * 365 * daily_usage
+
+        values = [
+            auto_disk_usage,
+            temperature,
+            read_error,
+            write_error,
+            5,
+            5,
+            power_on_hours,
+        ]
+
         loader = display_loading_animation("Analyzing Storage Health...")
         time.sleep(2)
+        score, status = predict_health(values)
         metrics = [
             disk_usage,
             temperature,
@@ -324,8 +370,12 @@ elif current_page == "health_monitor":
         ]
         score, status = predict_health(metrics)
         loader.empty()
-        st.metric("Health Score", f"{score}/100")
-        st.metric("Risk Status", status)
+
+        st.success(f"Health Score: {score}")
+        st.write("Status:", status)
+
+        st.session_state.health_score = score
+        st.session_state.quick_health_values = values
 
         st.session_state.health_score = score
 
@@ -333,11 +383,11 @@ elif current_page == "health_monitor":
 # DUPLICATES
 elif current_page == "duplicate_analysis":
 
-    st.subheader("Duplicate Detection")
+    st.subheader("Duplicate File Scan")
 
-    folder_path = st.text_input("Folder Path")
+    folder_path = st.text_input("Enter folder path to scan", "")
 
-    if st.button("Scan for Duplicates"):
+    if st.button("Scan Duplicates"):
         if os.path.exists(folder_path):
             loader = display_loading_animation("Scanning for Duplicate Files...")
             time.sleep(2)
@@ -373,12 +423,12 @@ elif current_page == "duplicate_analysis":
 # BACKUP
 elif current_page == "backup_automation":
 
-    st.subheader("Backup Management")
+    st.subheader("Backup Important Files")
 
-    source = st.text_input("Source File / Folder")
-    destination = st.text_input("Backup Destination")
+    source = st.text_input("Source Folder", "important_files")
+    destination = st.text_input("Backup Folder", "backup_storage", key="manual_backup_dest")
 
-    if st.button("Initiate Backup"):
+    if st.button("Run Backup"):
         if os.path.exists(source):
             loader = display_loading_animation("Backup in Progress...")
             time.sleep(2)
@@ -394,6 +444,11 @@ elif current_page == "backup_automation":
     st.markdown("---")
     st.subheader("Intelligent Important File Backup")
 
+    important_root = st.text_input("Folder to scan for important files", "C:\\Users")
+    recommended_destination = st.text_input(
+        "Backup Destination for Recommended Files",
+        value=destination if destination else "backup_storage",
+        key="important_backup_dest",
     important_root = st.text_input("Folder to scan for important files", value=source if source else "")
     recommended_destination = st.text_input(
         "Backup Destination for Recommended Files",
@@ -429,6 +484,25 @@ elif current_page == "protection_pipeline":
 
     pipeline_folder = st.text_input("Folder to scan for duplicates", "test_folder")
     pipeline_source = st.text_input("Important files folder", "important_files")
+    pipeline_backup = st.text_input("Backup destination", "backup_storage", key="pipeline_backup_dest")
+
+    st.markdown("Health Inputs (Quick Mode)")
+    total, used, _ = shutil.disk_usage(os.path.expanduser("~"))
+    pipeline_disk_usage = int((used / total) * 100) if total else 0
+    st.caption(f"Auto-detected Disk Usage for pipeline: {pipeline_disk_usage}%")
+
+    pipeline_laptop_age = st.number_input("Laptop age (years)", 0, 15, 3, key="pipe_laptop_age")
+    pipeline_daily_usage = st.slider("Average daily usage (hours)", 0, 24, 6, key="pipe_daily_usage")
+    pipeline_system_slow = st.radio(
+        "Is your system slowing or freezing?",
+        ["No", "Yes"],
+        key="pipe_slow",
+    )
+    pipeline_overheating = st.radio(
+        "Is your laptop overheating frequently?",
+        ["No", "Yes"],
+        key="pipe_hot",
+    )
     pipeline_backup = st.text_input("Backup destination", "backup_storage")
 
     st.markdown("Health Inputs")
@@ -447,11 +521,18 @@ elif current_page == "protection_pipeline":
         loader = display_loading_animation("Running end-to-end protection workflow...")
         time.sleep(2)
 
+        pipeline_temperature = 70 if pipeline_overheating == "Yes" else 40
+        pipeline_read_error = 25 if pipeline_system_slow == "Yes" else 5
+        pipeline_write_error = pipeline_read_error
+        pipeline_power_hours = pipeline_laptop_age * 365 * pipeline_daily_usage
+
         metrics = [
             pipeline_disk_usage,
             pipeline_temperature,
             pipeline_read_error,
             pipeline_write_error,
+            5,
+            5,
             pipeline_reallocated,
             pipeline_pending,
             pipeline_power_hours,
