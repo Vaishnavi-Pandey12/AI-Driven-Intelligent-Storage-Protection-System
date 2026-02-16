@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import shutil
 import plotly.graph_objects as go
 import random
 import datetime
@@ -16,7 +17,6 @@ from modules.backup_manager import (
     find_important_files,
     backup_selected_files,
 )
-from modules.system_monitor import get_system_health
 
 
 # =====================================================
@@ -297,14 +297,87 @@ if current_page == "dashboard":
 # HEALTH
 elif current_page == "health_monitor":
 
-    st.header("System Health Monitor")
+    st.header("Quick 1-Minute Health Check")
 
-    health = get_system_health()
+    total, used, _ = shutil.disk_usage(os.path.expanduser("~"))
+    auto_disk_usage = int((used / total) * 100) if total else 0
+    st.info(f"Auto-detected Disk Usage: {auto_disk_usage}%")
 
-    st.write("Disk usage:", health["disk_usage_percent"])
-    st.write("CPU usage:", health["cpu_usage_percent"])
-    st.write("RAM usage:", health["ram_usage_percent"])
-    st.write("System uptime (hrs):", round(health["uptime_hours"], 2))
+    laptop_age = st.number_input(
+        "Laptop age (years)",
+        min_value=0,
+        max_value=15,
+        value=3,
+    )
+
+    daily_usage = st.slider(
+        "Average daily usage (hours)",
+        0,
+        24,
+        6,
+    )
+
+    system_slow = st.radio(
+        "Is your system slowing or freezing?",
+        ["No", "Yes"],
+    )
+
+    overheating = st.radio(
+        "Is your laptop overheating frequently?",
+        ["No", "Yes"],
+    )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        disk_usage = st.slider("Disk Usage (%)", 0, 100, 70)
+        temperature = st.slider("Temperature (°C)", 20, 80, 40)
+        read_error = st.number_input("Read Error Rate", 0, 100, 10)
+    with col2:
+        write_error = st.number_input("Write Error Rate", 0, 100, 10)
+        reallocated = st.number_input("Reallocated Sector Count", 0, 500, 5)
+    with col3:
+        pending = st.number_input("Pending Sector Count", 0, 500, 5)
+        power_hours = st.number_input("Power On Hours", 0, 100000, 10000)
+
+    if st.button("Run Health Analysis"):
+
+        temperature = 70 if overheating == "Yes" else 40
+        read_error = 25 if system_slow == "Yes" else 5
+        write_error = read_error
+
+        power_on_hours = laptop_age * 365 * daily_usage
+
+        values = [
+            auto_disk_usage,
+            temperature,
+            read_error,
+            write_error,
+            5,
+            5,
+            power_on_hours,
+        ]
+
+        loader = display_loading_animation("Analyzing Storage Health...")
+        time.sleep(2)
+        score, status = predict_health(values)
+        metrics = [
+            disk_usage,
+            temperature,
+            read_error,
+            write_error,
+            reallocated,
+            pending,
+            power_hours,
+        ]
+        score, status = predict_health(metrics)
+        loader.empty()
+
+        st.success(f"Health Score: {score}")
+        st.write("Status:", status)
+
+        st.session_state.health_score = score
+        st.session_state.quick_health_values = values
+
+        st.session_state.health_score = score
 
 
 # DUPLICATES
@@ -376,6 +449,10 @@ elif current_page == "backup_automation":
         "Backup Destination for Recommended Files",
         value=destination if destination else "backup_storage",
         key="important_backup_dest",
+    important_root = st.text_input("Folder to scan for important files", value=source if source else "")
+    recommended_destination = st.text_input(
+        "Backup Destination for Recommended Files",
+        value=destination if destination else "backup_storage",
     )
 
     if st.button("Suggest Important Files"):
@@ -410,11 +487,35 @@ elif current_page == "protection_pipeline":
     pipeline_backup = st.text_input("Backup destination", "backup_storage", key="pipeline_backup_dest")
 
     st.markdown("Health Inputs (Quick Mode)")
-    pipeline_disk_usage = st.slider("Disk usage (%)", 0, 100, 60, key="pipe_disk")
+    total, used, _ = shutil.disk_usage(os.path.expanduser("~"))
+    pipeline_disk_usage = int((used / total) * 100) if total else 0
+    st.caption(f"Auto-detected Disk Usage for pipeline: {pipeline_disk_usage}%")
+
     pipeline_laptop_age = st.number_input("Laptop age (years)", 0, 15, 3, key="pipe_laptop_age")
-    pipeline_daily_usage = st.slider("Daily usage hours", 0, 24, 6, key="pipe_daily_usage")
-    pipeline_system_slow = st.radio("System slowing?", ["No", "Yes"], key="pipe_slow")
-    pipeline_overheating = st.radio("Overheating?", ["No", "Yes"], key="pipe_hot")
+    pipeline_daily_usage = st.slider("Average daily usage (hours)", 0, 24, 6, key="pipe_daily_usage")
+    pipeline_system_slow = st.radio(
+        "Is your system slowing or freezing?",
+        ["No", "Yes"],
+        key="pipe_slow",
+    )
+    pipeline_overheating = st.radio(
+        "Is your laptop overheating frequently?",
+        ["No", "Yes"],
+        key="pipe_hot",
+    )
+    pipeline_backup = st.text_input("Backup destination", "backup_storage")
+
+    st.markdown("Health Inputs")
+    col1, col2 = st.columns(2)
+    with col1:
+        pipeline_disk_usage = st.slider("Pipeline Disk Usage (%)", 0, 100, 70)
+        pipeline_temperature = st.slider("Pipeline Temperature (°C)", 20, 80, 40)
+        pipeline_read_error = st.number_input("Pipeline Read Error Rate", 0, 100, 10)
+        pipeline_write_error = st.number_input("Pipeline Write Error Rate", 0, 100, 10)
+    with col2:
+        pipeline_reallocated = st.number_input("Pipeline Reallocated Sector Count", 0, 500, 5)
+        pipeline_pending = st.number_input("Pipeline Pending Sector Count", 0, 500, 5)
+        pipeline_power_hours = st.number_input("Pipeline Power On Hours", 0, 100000, 10000)
 
     if st.button("Run Full Protection Scan"):
         loader = display_loading_animation("Running end-to-end protection workflow...")
@@ -432,6 +533,8 @@ elif current_page == "protection_pipeline":
             pipeline_write_error,
             5,
             5,
+            pipeline_reallocated,
+            pipeline_pending,
             pipeline_power_hours,
         ]
         score, status = predict_health(metrics)
