@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import shutil
 import plotly.graph_objects as go
 import random
 import datetime
@@ -16,6 +17,16 @@ from modules.backup_manager import (
     find_important_files,
     backup_selected_files,
 )
+from modules.system_monitor import get_system_metrics
+# Initialize notifications list
+if "notifications" not in st.session_state:
+    st.session_state.notifications = []
+
+# Safe notification function (prevents duplicates)
+def add_notification(note_type, message):
+    notification = {"type": note_type, "message": message}
+    if notification not in st.session_state.notifications:
+        st.session_state.notifications.append(notification)
 
 
 # =====================================================
@@ -203,7 +214,6 @@ with st.sidebar:
         "health_monitor": "Health Monitoring",
         "duplicate_analysis": "Duplicate Detection",
         "backup_automation": "Backup Management",
-        "protection_pipeline": "Full Protection",
         "notifications": "Notifications",
         "settings": "Settings"
     }
@@ -221,41 +231,38 @@ with st.sidebar:
 
 current_page = st.session_state.current_page
 
-
-# =====================================================
-# HERO HEADER
-# =====================================================
-today = datetime.date.today().strftime("%B %d, %Y")
-
-col1, col2 = st.columns([3,1])
-
-with col1:
-    st.markdown("""
-    <div class="hero-container">
-        <div class="hero-title">HELLO, WELCOME</div>
-        <div class="hero-sub">
-            Intelligent Storage Monitoring & Automated Protection
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col2:
-    st.markdown(f"""
-    <div style="text-align:right;">
-        <div class="status-badge">System Stable</div>
-        <div style="margin-top:10px; font-size:14px; color:#743930;">
-            {today}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
 # =====================================================
 # PAGE ROUTING
 # =====================================================
 
 # DASHBOARD
 if current_page == "dashboard":
+    # HERO HEADER
+    today = datetime.date.today().strftime("%B %d, %Y")
+
+    col_h1, col_h2 = st.columns([3,1])
+
+    with col_h1:
+        st.markdown("""
+        <div class="hero-container">
+            <div class="hero-title">HELLO, WELCOME</div>
+            <div class="hero-sub">
+                Intelligent Storage Monitoring & Automated Protection
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col_h2:
+        st.markdown(f"""
+        <div style="text-align:right;">
+            <div class="status-badge">System Stable</div>
+            <div style="margin-top:10px; font-size:14px;">
+                {today}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
 
     col1, col2, col3, col4 = st.columns(4)
 
@@ -293,63 +300,136 @@ if current_page == "dashboard":
         st.progress(0.85)
 
 
+
 # HEALTH
 elif current_page == "health_monitor":
 
-    st.subheader("Health Monitoring")
+    st.header("Quick 1-Minute Health Check")
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        disk_usage = st.slider("Disk Usage (%)", 0, 100, 70)
-        temperature = st.slider("Temperature (°C)", 20, 80, 40)
-        read_error = st.number_input("Read Error Rate", 0, 100, 10)
-    with col2:
-        write_error = st.number_input("Write Error Rate", 0, 100, 10)
-        reallocated = st.number_input("Reallocated Sector Count", 0, 500, 5)
-    with col3:
-        pending = st.number_input("Pending Sector Count", 0, 500, 5)
-        power_hours = st.number_input("Power On Hours", 0, 100000, 10000)
+    import psutil
+    import time
+
+    # Auto-detected values
+    disk = psutil.disk_usage('/')
+    auto_disk_usage = disk.percent
+
+    cpu_usage = psutil.cpu_percent(interval=1)
+    ram_usage = psutil.virtual_memory().percent
+
+    boot_time = psutil.boot_time()
+    uptime_hours = int((time.time() - boot_time) / 3600)
+
+    st.info(f"Disk Usage: {auto_disk_usage}%")
+    st.info(f"CPU Usage: {cpu_usage}%")
+    st.info(f"RAM Usage: {ram_usage}%")
+    st.info(f"System Uptime: {uptime_hours} hours")
+
+    laptop_age = st.number_input(
+        "Laptop age (years)",
+        min_value=0,
+        max_value=15,
+        value=3,
+    )
+
+    daily_usage = st.slider(
+        "Average daily usage (hours)",
+        0,
+        24,
+        6,
+    )
 
     if st.button("Run Health Analysis"):
-        loader = display_loading_animation("Analyzing Storage Health...")
-        time.sleep(2)
-        metrics = [
-            disk_usage,
-            temperature,
-            read_error,
-            write_error,
-            reallocated,
-            pending,
-            power_hours,
-        ]
-        score, status = predict_health(metrics)
-        loader.empty()
-        st.metric("Health Score", f"{score}/100")
-        st.metric("Risk Status", status)
 
-        st.session_state.health_score = score
+        risk = 0
 
+        if auto_disk_usage > 85:
+            risk += 20
+
+        if cpu_usage > 85:
+            risk += 15
+
+        if ram_usage > 85:
+            risk += 15
+
+        if uptime_hours > 200:
+            risk += 10
+
+        if laptop_age > 4:
+            risk += 20
+
+        if daily_usage > 8:
+            risk += 10
+
+        health_score = max(0, 100 - risk)
+
+        if health_score > 70:
+            status = "Good"
+        elif health_score > 40:
+            status = "Warning"
+        else:
+            status = "Critical"
+
+        st.success(f"Health Score: {health_score}")
+        st.write("Status:", status)
+
+        st.session_state.health_score = health_score
+
+        # -----------------
+        # Notifications
+        # -----------------
+
+        add_notification("info", "Health scan completed.")
+
+        if status == "Critical":
+            add_notification("error", "System health is critical.")
+        elif status == "Warning":
+            add_notification("warning", "System health warning detected.")
+        else:
+            add_notification("success", "System health is good.")
+
+        if auto_disk_usage > 85:
+            add_notification("warning", "High disk usage detected.")
 
 # DUPLICATES
 elif current_page == "duplicate_analysis":
 
-    st.subheader("Duplicate Detection")
+    st.subheader("Duplicate File Scan")
 
-    folder_path = st.text_input("Folder Path")
+    folder_path = st.text_input("Enter folder path to scan", "")
 
-    if st.button("Scan for Duplicates"):
+    if st.button("Scan Duplicates"):
+
         if os.path.exists(folder_path):
+
             loader = display_loading_animation("Scanning for Duplicate Files...")
             time.sleep(2)
+
             duplicates = find_duplicates(folder_path)
             savings = calculate_savings(duplicates)
+
             loader.empty()
+
             st.metric("Duplicate Files Found", len(duplicates))
             st.metric("Storage Recoverable (MB)", round(savings, 2))
+
             st.session_state.duplicate_count = len(duplicates)
             st.session_state.space_recoverable = round(savings / 1024, 2)
+
+            # Notifications
+            if len(duplicates) > 0:
+                st.session_state.notifications.append(
+                    {"type": "warning", "message": f"{len(duplicates)} duplicate files found."}
+                )
+            else:
+                st.session_state.notifications.append(
+                    {"type": "success", "message": "No duplicate files found."}
+                )
+
         else:
             st.error("Invalid folder path.")
+            st.session_state.notifications.append(
+                {"type": "error", "message": "Duplicate scan failed. Invalid folder path."}
+            )
 
     st.markdown("---")
     st.subheader("Find Duplicates of a Specific File")
@@ -358,14 +438,33 @@ elif current_page == "duplicate_analysis":
     search_root = st.text_input("Search Root", value=folder_path if folder_path else "/")
 
     if st.button("Find File Duplicates"):
-        if target_file and search_root and os.path.exists(target_file) and os.path.exists(search_root):
+
+        if (
+            target_file
+            and search_root
+            and os.path.exists(target_file)
+            and os.path.exists(search_root)
+        ):
+
             loader = display_loading_animation("Searching for identical copies...")
             time.sleep(1.5)
+
             matches = find_duplicates_of_file(target_file, search_root)
+
             loader.empty()
+
             st.write(f"Duplicate files found: {len(matches)}")
+
             if matches:
                 st.code("\n".join(matches[:100]))
+                st.session_state.notifications.append(
+                    {"type": "warning", "message": f"{len(matches)} copies of selected file found."}
+                )
+            else:
+                st.session_state.notifications.append(
+                    {"type": "success", "message": "No duplicate copies of selected file found."}
+                )
+
         else:
             st.error("Provide valid target file and search root paths.")
 
@@ -373,123 +472,132 @@ elif current_page == "duplicate_analysis":
 # BACKUP
 elif current_page == "backup_automation":
 
-    st.subheader("Backup Management")
+    st.subheader("Backup Important Files")
 
-    source = st.text_input("Source File / Folder")
-    destination = st.text_input("Backup Destination")
+    source = st.text_input("Source Folder", "important_files")
+    destination = st.text_input(
+        "Backup Folder",
+        "backup_storage",
+        key="manual_backup_dest"
+    )
 
-    if st.button("Initiate Backup"):
+    if st.button("Run Backup"):
+
         if os.path.exists(source):
+
             loader = display_loading_animation("Backup in Progress...")
             time.sleep(2)
+
             success = backup_path(source, destination)
+
             loader.empty()
+
             if success:
                 st.success("Backup Completed Successfully.")
+                st.session_state.notifications.append(
+                    {"type": "success", "message": "Manual backup completed successfully."}
+                )
             else:
                 st.error("Backup Failed.")
+                st.session_state.notifications.append(
+                    {"type": "error", "message": "Manual backup failed."}
+                )
+
         else:
             st.error("Source path does not exist.")
+            st.session_state.notifications.append(
+                {"type": "error", "message": "Backup failed. Source path invalid."}
+            )
 
     st.markdown("---")
     st.subheader("Intelligent Important File Backup")
 
-    important_root = st.text_input("Folder to scan for important files", value=source if source else "")
+    important_root = st.text_input(
+        "Folder to scan for important files",
+        value=source if source else ""
+    )
+
     recommended_destination = st.text_input(
         "Backup Destination for Recommended Files",
         value=destination if destination else "backup_storage",
+        key="important_backup_dest"
     )
 
     if st.button("Suggest Important Files"):
+
         if important_root and os.path.exists(important_root):
+
             loader = display_loading_animation("Finding important files...")
             time.sleep(1.5)
+
             important_files = find_important_files(important_root)
+
             loader.empty()
+
             st.session_state["important_files"] = important_files
+
             st.write(f"Important files detected: {len(important_files)}")
+
             if important_files:
                 st.code("\n".join(important_files[:30]))
+                st.session_state.notifications.append(
+                    {"type": "info", "message": f"{len(important_files)} important files detected."}
+                )
+            else:
+                st.session_state.notifications.append(
+                    {"type": "success", "message": "No important files detected."}
+                )
+
         else:
             st.error("Provide a valid folder path for important file detection.")
 
     if "important_files" in st.session_state and st.session_state["important_files"]:
+
         if st.button("Backup Recommended Files"):
+
             loader = display_loading_animation("Backing up recommended files...")
             time.sleep(1.5)
-            backup_selected_files(st.session_state["important_files"], recommended_destination)
+
+            backup_selected_files(
+                st.session_state["important_files"],
+                recommended_destination
+            )
+
             loader.empty()
+
             st.success("Important files backed up successfully.")
-
-
-# FULL PROTECTION
-elif current_page == "protection_pipeline":
-
-    st.subheader("Run Full Protection Pipeline")
-
-    pipeline_folder = st.text_input("Folder to scan for duplicates", "test_folder")
-    pipeline_source = st.text_input("Important files folder", "important_files")
-    pipeline_backup = st.text_input("Backup destination", "backup_storage")
-
-    st.markdown("Health Inputs")
-    col1, col2 = st.columns(2)
-    with col1:
-        pipeline_disk_usage = st.slider("Pipeline Disk Usage (%)", 0, 100, 70)
-        pipeline_temperature = st.slider("Pipeline Temperature (°C)", 20, 80, 40)
-        pipeline_read_error = st.number_input("Pipeline Read Error Rate", 0, 100, 10)
-        pipeline_write_error = st.number_input("Pipeline Write Error Rate", 0, 100, 10)
-    with col2:
-        pipeline_reallocated = st.number_input("Pipeline Reallocated Sector Count", 0, 500, 5)
-        pipeline_pending = st.number_input("Pipeline Pending Sector Count", 0, 500, 5)
-        pipeline_power_hours = st.number_input("Pipeline Power On Hours", 0, 100000, 10000)
-
-    if st.button("Run Full Protection Scan"):
-        loader = display_loading_animation("Running end-to-end protection workflow...")
-        time.sleep(2)
-
-        metrics = [
-            pipeline_disk_usage,
-            pipeline_temperature,
-            pipeline_read_error,
-            pipeline_write_error,
-            pipeline_reallocated,
-            pipeline_pending,
-            pipeline_power_hours,
-        ]
-        score, status = predict_health(metrics)
-
-        st.write("Health Score:", score)
-        st.write("Status:", status)
-
-        if os.path.exists(pipeline_folder):
-            duplicates = find_duplicates(pipeline_folder)
-            savings = calculate_savings(duplicates)
-            st.write("Duplicate groups:", len(duplicates))
-            st.write("Storage that can be saved:", round(savings, 2), "MB")
-        else:
-            st.warning("Duplicate scan skipped: invalid folder path.")
-
-        if status != "Good" and os.path.exists(pipeline_source):
-            backup_ok = backup_path(pipeline_source, pipeline_backup)
-            if backup_ok:
-                st.success("Risk detected → Backup executed.")
-            else:
-                st.error("Risk detected but backup failed.")
-        elif status != "Good":
-            st.error("Risk detected but pipeline source path is invalid.")
-        else:
-            st.success("System healthy — backup not required.")
-
-        loader.empty()
+            st.session_state.notifications.append(
+                {"type": "success", "message": "Recommended important files backed up."}
+            )
 
 
 # NOTIFICATIONS
 elif current_page == "notifications":
 
     st.subheader("Notifications Center")
-    st.info("Health scan completed.")
-    st.warning("High disk usage detected.")
-    st.success("Backup completed successfully.")
+
+    if st.button("Clear Notifications"):
+        st.session_state.notifications = []
+        st.success("Notifications cleared.")
+
+    if st.session_state.notifications:
+
+        for note in reversed(st.session_state.notifications):
+
+            if note["type"] == "info":
+                st.info(note["message"])
+
+            elif note["type"] == "warning":
+                st.warning(note["message"])
+
+            elif note["type"] == "success":
+                st.success(note["message"])
+
+            elif note["type"] == "error":
+                st.error(note["message"])
+
+    else:
+        st.info("No notifications yet.")
 
 
 # SETTINGS
