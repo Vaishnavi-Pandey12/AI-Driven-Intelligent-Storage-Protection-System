@@ -2,7 +2,7 @@ import psutil
 import time
 
 
-def get_system_health():
+def get_system_metrics():
 
     # Disk usage
     disk = psutil.disk_usage('/')
